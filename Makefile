@@ -7,6 +7,10 @@ DIRCLILIB := clilib
 LCCLILIB := clilib
 MODULES += CLILIB
 
+DIRCGHCPPRELOAD := cghcppreload
+LCCGHCPPRELOAD := cghcppreload
+MODULES += CGHCPPRELOAD
+
 CFLAGS := -g -O2 -Wall -Wextra -Wno-missing-field-initializers -Wno-unused-parameter -Wshadow -Wstrict-prototypes -Wmissing-prototypes -Wpointer-arith -Werror -std=gnu11 -fPIC
 
 .PHONY: all clean distclean unit
