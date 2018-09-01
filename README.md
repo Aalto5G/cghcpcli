@@ -35,7 +35,7 @@ first tries to resolve `TXT? _cgtp.ssh.example.com` and only after that `AAAA?
 ssh.example.com` and `A? ssh.example.com`.
 
 The example `TXT` record for `_cgtp.ssh.example.com` means that
-`issh.example.com` is reachable by connecting to `nat.example.net` port 8080
+`ssh.example.com` is reachable by connecting to `nat.example.net` port 8080
 and then using HTTP CONNECT method for connecting to `ssh.example.com`.
 
 # Testing with network namespaces
