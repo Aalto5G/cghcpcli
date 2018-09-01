@@ -12,7 +12,12 @@
 #include "dnshdr.h"
 #include "clilib.h"
 
-uint32_t global_addr = 0;
+int global_inited = 0;
+
+#define NAMESERVERS_MAXCOUNT 3
+size_t nameservers_count = 0;
+uint32_t nameservers[NAMESERVERS_MAXCOUNT];
+
 pthread_mutex_t global_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 struct searchentry {
@@ -29,12 +34,12 @@ static void global_addr_set(void)
   size_t n = 0;
   FILE *f;
   struct in_addr in;
-  if (global_addr != 0)
+  if (global_inited)
   {
     return;
   }
   pthread_mutex_lock(&global_mtx);
-  if (global_addr != 0)
+  if (global_inited)
   {
     pthread_mutex_unlock(&global_mtx);
     return;
@@ -42,7 +47,12 @@ static void global_addr_set(void)
   f = fopen("/etc/resolv.conf", "r");
   if (f == NULL)
   {
-    global_addr = (127<<24)|1;
+    if (nameservers_count == 0)
+    {
+      nameservers[nameservers_count] = (127<<24)|1;
+      nameservers_count++;
+    }
+    global_inited = 1;
     pthread_mutex_unlock(&global_mtx);
     return;
   }
@@ -94,16 +104,22 @@ static void global_addr_set(void)
       }
       if (inet_aton(srv, &in) == 1)
       {
-        global_addr = ntohl(in.s_addr);
+        if (nameservers_count < NAMESERVERS_MAXCOUNT)
+        {
+          nameservers[nameservers_count] = ntohl(in.s_addr);
+          nameservers_count++;
+        }
       }
     }
   }
-  if (global_addr == 0)
+  if (nameservers_count == 0)
   {
-    global_addr = (127<<24)|1;
+    nameservers[nameservers_count] = (127<<24)|1;
+    nameservers_count++;
   }
   fclose(f);
   free(line);
+  global_inited = 1;
   pthread_mutex_unlock(&global_mtx);
 }
 
@@ -125,6 +141,7 @@ static int resolv_patha(struct dst *dst)
   struct in_addr in;
   int answer_a = 0;
   int retrya = 0;
+  size_t curserver = 0;
 
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
   if (sockfd < 0)
@@ -142,7 +159,8 @@ static int resolv_patha(struct dst *dst)
   global_addr_set();
 
   ss.sin_family = AF_INET;
-  ss.sin_addr.s_addr = htonl(global_addr);
+  ss.sin_addr.s_addr = htonl(nameservers[curserver++]);
+  curserver %= nameservers_count;
   ss.sin_port = htons(53);
 
   snprintf(pathfirst, sizeof(pathfirst), "%s", dst->path);
@@ -202,6 +220,8 @@ static int resolv_patha(struct dst *dst)
         if (!answer_a)
         {
           //printf("resent A\n");
+          ss.sin_addr.s_addr = htonl(nameservers[curserver++]);
+          curserver %= nameservers_count;
           if (sendto(sockfd, querya, qoffa, 0, (struct sockaddr*)&ss, sslen) < 0)
           {
             //printf("sendto failed\n");
@@ -270,6 +290,7 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
   char databuf[8192];
   size_t datalen;
   size_t i;
+  size_t curserver = 0;
 
   global_addr_set();
 
@@ -302,7 +323,8 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
   }
 
   ss.sin_family = AF_INET;
-  ss.sin_addr.s_addr = htonl(global_addr);
+  ss.sin_addr.s_addr = htonl(nameservers[curserver++]);
+  curserver %= nameservers_count;
   ss.sin_port = htons(53);
 
   dst->family = 0;
@@ -380,6 +402,8 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
       {
         if (!answer_txt)
         {
+          ss.sin_addr.s_addr = htonl(nameservers[curserver++]);
+          curserver %= nameservers_count;
           //printf("resent TXT\n");
           if (sendto(sockfd, querytxt, qofftxt, 0, (struct sockaddr*)&ss, sslen) < 0)
           {
@@ -411,6 +435,10 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
     }
   }
 
+  curserver = 0;
+  ss.sin_addr.s_addr = htonl(nameservers[curserver++]);
+  curserver %= nameservers_count;
+
   if (sendto(sockfd, querya, qoffa, 0, (struct sockaddr*)&ss, sslen) < 0)
   {
     //printf("sendto failed\n");
@@ -437,6 +465,8 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
     {
       if (errno == EAGAIN)
       {
+        ss.sin_addr.s_addr = htonl(nameservers[curserver++]);
+        curserver %= nameservers_count;
         if (!answer_a)
         {
           //printf("resent A\n");
