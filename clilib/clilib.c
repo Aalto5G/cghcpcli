@@ -630,8 +630,8 @@ const char twohundred[] = "200";
 
 int connect_ex_dst(int sockfd, struct dst *dst, uint16_t port)
 {
-  struct sockaddr_in sin;
-  struct sockaddr_in6 sin6;
+  struct sockaddr_in sin = {};
+  struct sockaddr_in6 sin6 = {};
   char *namptr;
   char *endptr;
   char *colonptr;
