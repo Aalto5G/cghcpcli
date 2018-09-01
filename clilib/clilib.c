@@ -15,6 +15,14 @@
 uint32_t global_addr = 0;
 pthread_mutex_t global_mtx = PTHREAD_MUTEX_INITIALIZER;
 
+struct searchentry {
+  char domain[256];
+};
+
+#define SEARCHENTRIES_MAXCOUNT 6
+size_t searchentries_count = 0;
+struct searchentry searchentries[SEARCHENTRIES_MAXCOUNT];
+
 static void global_addr_set(void)
 {
   char *line = NULL;
@@ -44,6 +52,32 @@ static void global_addr_set(void)
     {
       break;
     }
+    if (strncmp(line, "search ", 7) == 0 ||
+        strncmp(line, "search\t", 7) == 0)
+    {
+      char *entry = line+7;
+      char *end = entry + strlen(entry);
+      while (entry != end)
+      {
+        char *sp = entry + strcspn(entry, " \t\r\n");
+        if (*sp)
+        {
+          *sp = '\0';
+        }
+        else
+        {
+          sp--;
+        }
+        if (searchentries_count < SEARCHENTRIES_MAXCOUNT)
+        {
+          snprintf(searchentries[searchentries_count].domain,
+                   sizeof(searchentries[searchentries_count].domain), "%s",
+                   entry);
+          searchentries_count++;
+        }
+        entry = sp+1 + strspn(sp+1, " \t\r\n");
+      }
+    }
     if (strncmp(line, "nameserver ", 11) == 0 ||
         strncmp(line, "nameserver\t", 11) == 0)
     {
@@ -61,14 +95,13 @@ static void global_addr_set(void)
       if (inet_aton(srv, &in) == 1)
       {
         global_addr = ntohl(in.s_addr);
-        fclose(f);
-        free(line);
-        pthread_mutex_unlock(&global_mtx);
-        return;
       }
     }
   }
-  global_addr = (127<<24)|1;
+  if (global_addr == 0)
+  {
+    global_addr = (127<<24)|1;
+  }
   fclose(f);
   free(line);
   pthread_mutex_unlock(&global_mtx);
@@ -236,6 +269,22 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
   uint16_t qtype;
   char databuf[8192];
   size_t datalen;
+  size_t i;
+
+  global_addr_set();
+
+  if (strchr(name, '.') == NULL)
+  {
+    for (i = 0; i < searchentries_count; i++)
+    {
+      snprintf(namcgtp, sizeof(namcgtp), "%s.%s", name,
+               searchentries[i].domain);
+      if (get_dst(dst, try_ipv6, namcgtp) == 0)
+      {
+        return 0;
+      }
+    }
+  }
 
   snprintf(namcgtp, sizeof(namcgtp), "_cgtp.%s", name);
 
@@ -251,8 +300,6 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
     close(sockfd);
     return -errno;
   }
-
-  global_addr_set();
 
   ss.sin_family = AF_INET;
   ss.sin_addr.s_addr = htonl(global_addr);
