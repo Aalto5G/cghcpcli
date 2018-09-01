@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <sys/poll.h>
 #include "dnshdr.h"
 #include "clilib.h"
 
@@ -583,6 +584,7 @@ static ssize_t writev_all(int sockfd, struct iovec *iovs, size_t sz)
   size_t bytes_written = 0;
   ssize_t ret;
   size_t reduceret = 0;
+  struct pollfd pfd;
   if (sz == 0)
   {
     return 0;
@@ -607,6 +609,13 @@ static ssize_t writev_all(int sockfd, struct iovec *iovs, size_t sz)
       }
       if (ret < 0 && errno == EINTR)
       {
+        continue;
+      }
+      else if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+      {
+        pfd.fd = sockfd;
+        pfd.events = POLLOUT;
+        poll(&pfd, 1, -1);
         continue;
       }
       else if (bytes_written > 0)
@@ -672,6 +681,8 @@ int connect_ex_dst(int sockfd, struct dst *dst, uint16_t port)
   char *portptr;
   unsigned long portul;
   uint16_t used_port;
+  struct pollfd pfd;
+  int connret = 0;
 
   namptr = dst->path;
   endptr = strchr(namptr, '!');
@@ -724,7 +735,8 @@ int connect_ex_dst(int sockfd, struct dst *dst, uint16_t port)
     sin6.sin6_family = AF_INET6;
     sin6.sin6_port = htons(used_port);
     memcpy(sin6.sin6_addr.s6_addr, dst->u.ipv6, 16);
-    if (connect(sockfd, (const struct sockaddr*)&sin6, sizeof(sin6)) < 0)
+    connret = connect(sockfd, (const struct sockaddr*)&sin6, sizeof(sin6));
+    if (connret < 0 && errno != EINPROGRESS)
     {
       return -1;
     }
@@ -734,10 +746,17 @@ int connect_ex_dst(int sockfd, struct dst *dst, uint16_t port)
     sin.sin_family = AF_INET;
     sin.sin_port = htons(used_port);
     sin.sin_addr.s_addr = htonl(dst->u.ip);
-    if (connect(sockfd, (const struct sockaddr*)&sin, sizeof(sin)) < 0)
+    connret = connect(sockfd, (const struct sockaddr*)&sin, sizeof(sin));
+    if (connret < 0 && errno != EINPROGRESS)
     {
       return -1;
     }
+  }
+  if (connret < 0 && errno == EINPROGRESS)
+  {
+    pfd.fd = sockfd;
+    pfd.events = POLLOUT;
+    poll(&pfd, 1, -1);
   }
   namptr = endptr + 1;
   while (namptr)
@@ -794,6 +813,13 @@ int connect_ex_dst(int sockfd, struct dst *dst, uint16_t port)
     for (;;)
     {
       read_ret = read(sockfd, &ch, 1);
+      if (read_ret < 0 && (errno == EWOULDBLOCK || errno == EAGAIN))
+      {
+        pfd.fd = sockfd;
+        pfd.events = POLLIN;
+        poll(&pfd, 1, -1);
+        continue;
+      }
       if (read_ret < 0)
       {
         return -1;
