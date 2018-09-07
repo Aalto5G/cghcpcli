@@ -182,5 +182,5 @@ ip netns exec ns2 nc -v -v -v -l -p 1234
 
 ...and try in another window:
 ```
-LD\_PRELOAD=/path/to/cghcpcli/cghcppreload/libcghcppreload.so ip netns exec ns1 nc -v -v -v ssh.example.com 1234
+LD_PRELOAD=/path/to/cghcpcli/cghcppreload/libcghcppreload.so ip netns exec ns1 nc -v -v -v ssh.example.com 1234
 ```
