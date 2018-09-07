@@ -85,3 +85,102 @@ ip netns exec ns1 ./cghcpcli/clilib/clilibtest ssh.example.com 1234
 ```
 
 The connection should open and close successfully in the netcat side.
+
+# Using with OpenSSH
+
+Add into `.ssh/config`:
+
+```
+Host ssh.example.com
+        HostName        ssh.example.com
+        ProxyCommand    /path/to/cghcpcli/cghcpproxycmd/cghcpproxycmd 10.150.2.100 8080 %h %p
+```
+
+Then execute:
+```
+mkdir -p /etc/netns/ns1
+echo "nameserver 10.150.2.100" > /etc/netns/ns1/resolv.conf
+ip link add veth0 type veth peer name veth1
+ip link add veth2 type veth peer name veth3
+ifconfig veth0 up
+ifconfig veth1 up
+ifconfig veth2 up
+ifconfig veth3 up
+ethtool -K veth0 rx off tx off tso off gso off gro off lro off
+ethtool -K veth1 rx off tx off tso off gso off gro off lro off
+ethtool -K veth2 rx off tx off tso off gso off gro off lro off
+ethtool -K veth3 rx off tx off tso off gso off gro off lro off
+ip netns add ns1
+ip netns add ns2
+ip link set veth0 netns ns1
+ip link set veth3 netns ns2
+ip netns exec ns1 ip addr add 10.150.2.1/24 dev veth0
+ip netns exec ns2 ip addr add 10.150.1.101/24 dev veth3
+ip netns exec ns1 ip link set veth0 up
+ip netns exec ns2 ip link set veth3 up
+ip netns exec ns1 ip link set lo up
+ip netns exec ns2 ip link set lo up
+ip netns exec ns2 ip route add default via 10.150.1.1
+```
+
+Then run in one terminal window and leave it running:
+```
+./ldpairwall/airwall/ldpairwall veth2 veth1
+```
+
+Then, execute netcat in one terminal window:
+```
+ip netns exec ns2 nc -v -v -v -l -p 22
+```
+
+...and try in another window:
+```
+ip netns exec ns1 ssh ssh.example.com
+```
+
+The connection should open in the netcat side and you should see the SSH
+version greeting.
+
+# Using with other unmodified applications
+
+Then execute:
+```
+mkdir -p /etc/netns/ns1
+echo "nameserver 10.150.2.100" > /etc/netns/ns1/resolv.conf
+ip link add veth0 type veth peer name veth1
+ip link add veth2 type veth peer name veth3
+ifconfig veth0 up
+ifconfig veth1 up
+ifconfig veth2 up
+ifconfig veth3 up
+ethtool -K veth0 rx off tx off tso off gso off gro off lro off
+ethtool -K veth1 rx off tx off tso off gso off gro off lro off
+ethtool -K veth2 rx off tx off tso off gso off gro off lro off
+ethtool -K veth3 rx off tx off tso off gso off gro off lro off
+ip netns add ns1
+ip netns add ns2
+ip link set veth0 netns ns1
+ip link set veth3 netns ns2
+ip netns exec ns1 ip addr add 10.150.2.1/24 dev veth0
+ip netns exec ns2 ip addr add 10.150.1.101/24 dev veth3
+ip netns exec ns1 ip link set veth0 up
+ip netns exec ns2 ip link set veth3 up
+ip netns exec ns1 ip link set lo up
+ip netns exec ns2 ip link set lo up
+ip netns exec ns2 ip route add default via 10.150.1.1
+```
+
+Then run in one terminal window and leave it running:
+```
+./ldpairwall/airwall/ldpairwall veth2 veth1
+```
+
+Then, execute netcat in one terminal window:
+```
+ip netns exec ns2 nc -v -v -v -l -p 1234
+```
+
+...and try in another window:
+```
+LD\_PRELOAD=/path/to/cghcpcli/cghcppreload/libcghcppreload.so ip netns exec ns1 nc -v -v -v ssh.example.com 1234
+```
