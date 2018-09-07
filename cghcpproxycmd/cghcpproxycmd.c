@@ -132,6 +132,13 @@ static const char pr_crlfcrlf[] = "\r\n\r\n";
 static const char pr_httpslash[] = "HTTP/";
 static const char pr_twohundred[] = "200";
 
+static void usage(const char *argv0)
+{
+  fprintf(stderr, "Usage: %s foo1.lan 8080 foo2.lan 80\n", argv0);
+  fprintf(stderr, "Or:    %s foo2.lan 80\n", argv0);
+  exit(1);
+}
+
 int main(int argc, char **argv)
 {
   int sockfd;
@@ -168,18 +175,15 @@ int main(int argc, char **argv)
 
   if (argc != 3 && argc != 5)
   {
-    printf("Usage: %s foo1.lan 8080 foo2.lan 80\n", argv[0]);
-    printf("Or:    %s foo2.lan 80\n", argv[0]);
+    usage(argv[0]);
     return 1;
   }
   if (argc == 3)
   {
     port = atoi(argv[2]);
-    if (((int)(uint16_t)port) != port)
+    if (((int)(uint16_t)port) != port || port == 0)
     {
-      printf("Usage: %s foo1.lan 8080 foo2.lan 80\n", argv[0]);
-      printf("Or:    %s foo2.lan 80\n", argv[0]);
-      return 1;
+      usage(argv[0]);
     }
     sockfd = socket_ex(argv[1], port);
     if (sockfd < 0)
@@ -191,15 +195,14 @@ int main(int argc, char **argv)
   else
   {
     port = atoi(argv[2]);
-    if (((int)(uint16_t)port) != port)
+    if (((int)(uint16_t)port) != port || port == 0)
     {
-      printf("Usage: %s foo1.lan 8080 foo2.lan 80\n", argv[0]);
-      printf("Or:    %s foo2.lan 80\n", argv[0]);
-      return 1;
+      usage(argv[0]);
     }
     he = gethostbyname(argv[1]);
     if (he == NULL)
     {
+      errno = ENXIO;
       perror("Host not found");
       return 1;
     }
@@ -210,9 +213,7 @@ int main(int argc, char **argv)
     port = atoi(argv[4]);
     if (((int)(uint16_t)port) != port)
     {
-      printf("Usage: %s foo1.lan 8080 foo2.lan 80\n", argv[0]);
-      printf("Or:    %s foo2.lan 80\n", argv[0]);
-      return 1;
+      usage(argv[0]);
     }
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -226,7 +227,6 @@ int main(int argc, char **argv)
       perror("Err");
       return 1;
     }
-    printf("Connection successful\n");
     snprintf(portint, sizeof(portint), "%d", port);
     iovs_src[1].iov_base = argv[3];
     iovs_src[1].iov_len = strlen(argv[3]);
