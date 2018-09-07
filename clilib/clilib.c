@@ -665,16 +665,16 @@ int connect_ex_dst(int sockfd, struct dst *dst, uint16_t port)
     {.iov_base = (char*)crlfcrlf, .iov_len = sizeof(crlfcrlf)-1},
   };
   struct iovec iovs[9];
-  size_t httpslashcnt = 0;
   ssize_t bytes_expected;
   ssize_t bytes_written;
-  size_t majcnt = 0;
-  size_t dot_seen = 0;
-  size_t spseen = 0;
-  size_t sp2seen = 0;
-  size_t mincnt = 0;
-  size_t crlfcrlfcnt = 0;
-  size_t twohundredcnt = 0;
+  size_t httpslashcnt;
+  size_t majcnt;
+  size_t dot_seen;
+  size_t spseen;
+  size_t sp2seen;
+  size_t mincnt;
+  size_t crlfcrlfcnt;
+  size_t twohundredcnt;
   ssize_t read_ret;
   char ch;
   const int gw_port = 8080;
@@ -810,6 +810,14 @@ int connect_ex_dst(int sockfd, struct dst *dst, uint16_t port)
         return -1;
       }
     }
+    httpslashcnt = 0;
+    majcnt = 0;
+    dot_seen = 0;
+    spseen = 0;
+    sp2seen = 0;
+    mincnt = 0;
+    crlfcrlfcnt = 0;
+    twohundredcnt = 0;
     for (;;)
     {
       read_ret = read(sockfd, &ch, 1);
