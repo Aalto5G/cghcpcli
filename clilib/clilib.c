@@ -637,23 +637,11 @@ const char crlfcrlf[] = "\r\n\r\n";
 const char httpslash[] = "HTTP/";
 const char twohundred[] = "200";
 
-int connect_ex_dst(int sockfd, struct dst *dst, uint16_t port)
+int write_http_connect_port(int fd, const char *host, uint16_t port)
 {
-  struct sockaddr_in sin = {};
-  struct sockaddr_in6 sin6 = {};
-  char *namptr;
-  char *endptr;
-  char *colonptr;
+  ssize_t bytes_expected, bytes_written;
   char portint[16] = {0};
-  struct iovec iovsnocolon_src[] = {
-    {.iov_base = (char*)conbegin, .iov_len = sizeof(conbegin)-1},
-    {.iov_base = NULL, .iov_len = 0}, // [1]
-    {.iov_base = (char*)interim, .iov_len = sizeof(interim)-1},
-    {.iov_base = NULL, .iov_len = 0}, // [3]
-    {.iov_base = (char*)crlfcrlf, .iov_len = sizeof(crlfcrlf)-1},
-  };
-  struct iovec iovsnocolon[5];
-  struct iovec iovs_src[] = {
+  struct iovec iovs[] = {
     {.iov_base = (char*)conbegin, .iov_len = sizeof(conbegin)-1},
     {.iov_base = NULL, .iov_len = 0}, // [1]
     {.iov_base = (char*)colon, .iov_len = sizeof(colon)-1},
@@ -664,19 +652,161 @@ int connect_ex_dst(int sockfd, struct dst *dst, uint16_t port)
     {.iov_base = portint, .iov_len = 0}, // [7]
     {.iov_base = (char*)crlfcrlf, .iov_len = sizeof(crlfcrlf)-1},
   };
-  struct iovec iovs[9];
-  ssize_t bytes_expected;
-  ssize_t bytes_written;
-  size_t httpslashcnt;
-  size_t majcnt;
-  size_t dot_seen;
-  size_t spseen;
-  size_t sp2seen;
-  size_t mincnt;
-  size_t crlfcrlfcnt;
-  size_t twohundredcnt;
+  snprintf(portint, sizeof(portint), "%d", (int)port);
+  iovs[1].iov_base = (char*)host;
+  iovs[1].iov_len = strlen(host);
+  iovs[3].iov_len = strlen(portint);
+  iovs[5].iov_base = (char*)host;
+  iovs[5].iov_len = strlen(host);
+  iovs[7].iov_len = strlen(portint);
+  bytes_expected = bytes_iovs(iovs, 9);
+  bytes_written = writev_all(fd, iovs, 9);
+  if (bytes_written != bytes_expected)
+  {
+    return -1;
+  }
+  return 0;
+}
+
+int write_http_connect(int fd, const char *host_and_port)
+{
+  ssize_t bytes_expected, bytes_written;
+  struct iovec iovs[] = {
+    {.iov_base = (char*)conbegin, .iov_len = sizeof(conbegin)-1},
+    {.iov_base = NULL, .iov_len = 0}, // [1]
+    {.iov_base = (char*)interim, .iov_len = sizeof(interim)-1},
+    {.iov_base = NULL, .iov_len = 0}, // [3]
+    {.iov_base = (char*)crlfcrlf, .iov_len = sizeof(crlfcrlf)-1},
+  };
+  iovs[1].iov_base = (char*)host_and_port;
+  iovs[1].iov_len = strlen(host_and_port);
+  iovs[3].iov_base = (char*)host_and_port;
+  iovs[3].iov_len = strlen(host_and_port);
+  bytes_expected = bytes_iovs(iovs, 5);
+  bytes_written = writev_all(fd, iovs, 5);
+  if (bytes_written != bytes_expected)
+  {
+    return -1;
+  }
+  return 0;
+}
+
+int read_http_ok(int fd)
+{
+  size_t httpslashcnt = 0;
+  size_t majcnt = 0;
+  size_t dot_seen = 0;
+  size_t spseen = 0;
+  size_t sp2seen = 0;
+  size_t mincnt = 0;
+  size_t crlfcrlfcnt = 0;
+  size_t twohundredcnt = 0;
   ssize_t read_ret;
-  char ch;
+  for (;;)
+  {
+    char ch;
+    struct pollfd pfd;
+    read_ret = read(fd, &ch, 1);
+    if (read_ret < 0 && (errno == EWOULDBLOCK || errno == EAGAIN))
+    {
+      pfd.fd = fd;
+      pfd.events = POLLIN;
+      poll(&pfd, 1, -1);
+      continue;
+    }
+    if (read_ret < 0)
+    {
+      return -1;
+    }
+    if (read_ret == 0)
+    {
+      errno = EBADMSG;
+      return -1;
+    }
+    if (read_ret > 1)
+    {
+      abort();
+    }
+    if (httpslashcnt < 5)
+    {
+      if (httpslash[httpslashcnt] == ch)
+      {
+        httpslashcnt++;
+      }
+      else
+      {
+        errno = EBADMSG;
+        return -1;
+      }
+    }
+    else if (!spseen)
+    {
+      if (isdigit(ch))
+      {
+        if (dot_seen)
+        {
+          mincnt++;
+        }
+        else
+        {
+          majcnt++;
+        }
+        continue;
+      }
+      if (ch == '.' && !dot_seen)
+      {
+        dot_seen = 1;
+      }
+      if (ch == ' ')
+      {
+        if (majcnt == 0 || mincnt == 0)
+        {
+          errno = EBADMSG;
+          return -1;
+        }
+        spseen = 1;
+      }
+    }
+    else if (!sp2seen)
+    {
+      if (twohundredcnt < 3 && twohundred[twohundredcnt] == ch)
+      {
+        twohundredcnt++;
+      }
+      else if (ch == ' ')
+      {
+        sp2seen = 1;
+      }
+      else
+      {
+        errno = EBADMSG;
+        return -1;
+      }
+    }
+    if (crlfcrlf[crlfcrlfcnt] == ch)
+    {
+      crlfcrlfcnt++;
+    }
+    if (crlfcrlfcnt == 4)
+    {
+      if (twohundredcnt != 3 || !sp2seen)
+      {
+        errno = EBADMSG;
+        return -1;
+      }
+      break;
+    }
+  }
+  return 0;
+}
+
+int connect_ex_dst(int sockfd, struct dst *dst, uint16_t port)
+{
+  struct sockaddr_in sin = {};
+  struct sockaddr_in6 sin6 = {};
+  char *namptr;
+  char *endptr;
+  char *colonptr;
   const int gw_port = 8080;
   char *portptr;
   unsigned long portul;
@@ -774,14 +904,7 @@ int connect_ex_dst(int sockfd, struct dst *dst, uint16_t port)
     }
     if (colonptr)
     {
-      memcpy(&iovsnocolon, &iovsnocolon_src, sizeof(iovsnocolon_src));
-      iovsnocolon[1].iov_base = namptr;
-      iovsnocolon[1].iov_len = strlen(namptr);
-      iovsnocolon[3].iov_base = namptr;
-      iovsnocolon[3].iov_len = strlen(namptr);
-      bytes_expected = bytes_iovs(iovsnocolon, 5);
-      bytes_written = writev_all(sockfd, iovsnocolon, 5);
-      if (bytes_written != bytes_expected)
+      if (write_http_connect(sockfd, namptr) != 0)
       {
         return -1;
       }
@@ -790,126 +913,20 @@ int connect_ex_dst(int sockfd, struct dst *dst, uint16_t port)
     {
       if (endptr)
       {
-        snprintf(portint, sizeof(portint), "%d", (int)gw_port);
+        used_port = gw_port;
       }
       else
       {
-        snprintf(portint, sizeof(portint), "%d", (int)port);
+        used_port = port;
       }
-      memcpy(&iovs, &iovs_src, sizeof(iovs_src));
-      iovs[1].iov_base = namptr;
-      iovs[1].iov_len = strlen(namptr);
-      iovs[3].iov_len = strlen(portint);
-      iovs[5].iov_base = namptr;
-      iovs[5].iov_len = strlen(namptr);
-      iovs[7].iov_len = strlen(portint);
-      bytes_expected = bytes_iovs(iovs, 9);
-      bytes_written = writev_all(sockfd, iovs, 9);
-      if (bytes_written != bytes_expected)
+      if (write_http_connect_port(sockfd, namptr, used_port) != 0)
       {
         return -1;
       }
     }
-    httpslashcnt = 0;
-    majcnt = 0;
-    dot_seen = 0;
-    spseen = 0;
-    sp2seen = 0;
-    mincnt = 0;
-    crlfcrlfcnt = 0;
-    twohundredcnt = 0;
-    for (;;)
+    if (read_http_ok(sockfd) != 0)
     {
-      read_ret = read(sockfd, &ch, 1);
-      if (read_ret < 0 && (errno == EWOULDBLOCK || errno == EAGAIN))
-      {
-        pfd.fd = sockfd;
-        pfd.events = POLLIN;
-        poll(&pfd, 1, -1);
-        continue;
-      }
-      if (read_ret < 0)
-      {
-        return -1;
-      }
-      if (read_ret == 0) 
-      {
-        errno = EBADMSG;
-        return -1;
-      }
-      if (read_ret > 1) 
-      {
-        abort();
-      }
-      if (httpslashcnt < 5)
-      {
-        if (httpslash[httpslashcnt] == ch)
-        {
-          httpslashcnt++;
-        }
-        else
-        {
-          errno = EBADMSG;
-          return -1;
-        }
-      }
-      else if (!spseen)
-      {
-        if (isdigit(ch))
-        {
-          if (dot_seen)
-          {
-            mincnt++;
-          }
-          else
-          {
-            majcnt++;
-          }
-          continue;
-        }
-        if (ch == '.' && !dot_seen)
-        {
-          dot_seen = 1;
-        }
-        if (ch == ' ')
-        {
-          if (majcnt == 0 || mincnt == 0)
-          {
-            errno = EBADMSG;
-            return -1;
-          }
-          spseen = 1;
-        }
-      }
-      else if (!sp2seen)
-      {
-        if (twohundredcnt < 3 && twohundred[twohundredcnt] == ch)
-        {
-          twohundredcnt++;
-        }
-        else if (ch == ' ')
-        {
-          sp2seen = 1;
-        }
-        else
-        {
-          errno = EBADMSG;
-          return -1;
-        }
-      }
-      if (crlfcrlf[crlfcrlfcnt] == ch)
-      {
-        crlfcrlfcnt++;
-      }
-      if (crlfcrlfcnt == 4)
-      {
-        if (twohundredcnt != 3 || !sp2seen)
-        {
-          errno = EBADMSG;
-          return -1;
-        }
-        break;
-      }
+      return -1;
     }
     if (endptr)
     {

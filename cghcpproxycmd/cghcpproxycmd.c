@@ -28,109 +28,11 @@
  */
 
 // RFE move these into a common library
-static size_t bytes_iovs(struct iovec *iovs, size_t sz)
-{
-  size_t total = 0;
-  size_t i;
-  for (i = 0; i < sz; i++)
-  {
-    total += iovs[i].iov_len;
-  }
-  return total;
-}
-
 static void set_nonblock(int fd)
 {
   int flags = fcntl(fd, F_GETFL, 0);
   fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
-
-static size_t reduce_iovs(struct iovec *iovs, size_t sz, size_t reduction)
-{
-  size_t i;
-  struct iovec *iov;
-  for (i = 0; i < sz; i++)
-  {
-    iov = &iovs[i];
-    if (iov->iov_len > reduction)
-    {
-      iov->iov_len -= reduction;
-      iov->iov_base = ((char*)iov->iov_base) + reduction;
-      return i;
-    }
-    else if (iov->iov_len == reduction)
-    {
-      iov->iov_len -= reduction;
-      iov->iov_base = ((char*)iov->iov_base) + reduction;
-      return i+1;
-    }
-    else
-    {
-      reduction -= iov->iov_len;
-      iov->iov_base = ((char*)iov->iov_base) + iov->iov_len;
-      iov->iov_len = 0;
-    }
-  }
-  return i;
-}
-
-static ssize_t writev_all(int sockfd, struct iovec *iovs, size_t sz)
-{
-  size_t bytes_written = 0;
-  ssize_t ret;
-  size_t reduceret = 0;
-  struct pollfd pfd;
-  if (sz == 0)
-  {
-    return 0;
-  }
-  for (;;)
-  {
-    ret = writev(sockfd, iovs + reduceret, sz - reduceret);
-    if (ret > 0)
-    {
-      bytes_written += ret;
-      reduceret = reduce_iovs(iovs, sz, ret);
-      if (reduceret == sz)
-      {
-        return bytes_written;
-      }
-    }
-    else if (ret <= 0)
-    {
-      if (ret == 0)
-      {
-        errno = EPIPE; // Let's give some errno
-      }
-      if (ret < 0 && errno == EINTR)
-      {
-        continue;
-      }
-      else if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
-      {
-        pfd.fd = sockfd;
-        pfd.events = POLLOUT;
-        poll(&pfd, 1, -1);
-        continue;
-      }
-      else if (bytes_written > 0)
-      {
-        return bytes_written;
-      }
-      else
-      {
-        return -1;
-      }
-    }
-  }
-}
-
-static const char pr_conbegin[] = "CONNECT ";
-static const char pr_colon[] = ":";
-static const char pr_interim[] = " HTTP/1.1\r\nHost: ";
-static const char pr_crlfcrlf[] = "\r\n\r\n";
-static const char pr_httpslash[] = "HTTP/";
-static const char pr_twohundred[] = "200";
 
 static void usage(const char *argv0)
 {
@@ -145,29 +47,6 @@ int main(int argc, char **argv)
   int port;
   struct hostent *he;
   struct sockaddr_in sin;
-  char portint[16] = {0};
-  ssize_t bytes_expected;
-  ssize_t bytes_written;
-  struct iovec iovs_src[] = {
-    {.iov_base = (char*)pr_conbegin, .iov_len = sizeof(pr_conbegin)-1},
-    {.iov_base = NULL, .iov_len = 0}, // [1]
-    {.iov_base = (char*)pr_colon, .iov_len = sizeof(pr_colon)-1},
-    {.iov_base = portint, .iov_len = 0}, // [3]
-    {.iov_base = (char*)pr_interim, .iov_len = sizeof(pr_interim)-1},
-    {.iov_base = NULL, .iov_len = 0}, // [5]
-    {.iov_base = (char*)pr_colon, .iov_len = sizeof(pr_colon)-1},
-    {.iov_base = portint, .iov_len = 0}, // [7]
-    {.iov_base = (char*)pr_crlfcrlf, .iov_len = sizeof(pr_crlfcrlf)-1},
-  };
-  size_t httpslashcnt = 0;
-  size_t majcnt = 0;
-  size_t dot_seen = 0;
-  size_t spseen = 0;
-  size_t sp2seen = 0;
-  size_t mincnt = 0;
-  size_t crlfcrlfcnt = 0;
-  size_t twohundredcnt = 0;
-  ssize_t read_ret;
   char outbuf[8192];
   char inbuf[8192];
   size_t outbufcnt = 0;
@@ -227,122 +106,15 @@ int main(int argc, char **argv)
       perror("Err");
       return 1;
     }
-    snprintf(portint, sizeof(portint), "%d", port);
-    iovs_src[1].iov_base = argv[3];
-    iovs_src[1].iov_len = strlen(argv[3]);
-    iovs_src[3].iov_len = strlen(portint);
-    iovs_src[5].iov_base = argv[3];
-    iovs_src[5].iov_len = strlen(argv[3]);
-    iovs_src[7].iov_len = strlen(portint);
-    bytes_expected = bytes_iovs(iovs_src, 9);
-    bytes_written = writev_all(sockfd, iovs_src, 9);
-    if (bytes_written != bytes_expected)
+    if (write_http_connect_port(sockfd, argv[3], port) != 0)
     {
-      perror("Err");
+      perror("Proxy connection failed");
       return 1;
     }
-
-    // RFE move this into a common function
-    for (;;)
+    if (read_http_ok(sockfd) != 0)
     {
-      char ch;
-      struct pollfd pfd;
-      read_ret = read(sockfd, &ch, 1);
-      if (read_ret < 0 && (errno == EWOULDBLOCK || errno == EAGAIN))
-      {
-        pfd.fd = sockfd;
-        pfd.events = POLLIN;
-        poll(&pfd, 1, -1);
-        continue;
-      }
-      if (read_ret < 0)
-      {
-        perror("Read returned -1");
-        return 1;
-      }
-      if (read_ret == 0)
-      {
-        errno = EBADMSG;
-        perror("Read returned 0");
-        return 1;
-      }
-      if (read_ret > 1)
-      {
-        abort();
-      }
-      if (httpslashcnt < 5)
-      {
-        if (pr_httpslash[httpslashcnt] == ch)
-        {
-          httpslashcnt++;
-        }
-        else
-        {
-          errno = EBADMSG;
-          perror("Bad message");
-          return 1;
-        }
-      }
-      else if (!spseen)
-      {
-        if (isdigit(ch))
-        {
-          if (dot_seen)
-          {
-            mincnt++;
-          }
-          else
-          {
-            majcnt++;
-          }
-          continue;
-        }
-        if (ch == '.' && !dot_seen)
-        {
-          dot_seen = 1;
-        }
-        if (ch == ' ')
-        {
-          if (majcnt == 0 || mincnt == 0)
-          {
-            errno = EBADMSG;
-            perror("Bad message");
-            return 1;
-          }
-          spseen = 1;
-        }
-      }
-      else if (!sp2seen)
-      {
-        if (twohundredcnt < 3 && pr_twohundred[twohundredcnt] == ch)
-        {
-          twohundredcnt++;
-        }
-        else if (ch == ' ')
-        {
-          sp2seen = 1;
-        }
-        else
-        {
-          errno = EBADMSG;
-          perror("Bad message");
-          return 1;
-        }
-      }
-      if (pr_crlfcrlf[crlfcrlfcnt] == ch)
-      {
-        crlfcrlfcnt++;
-      }
-      if (crlfcrlfcnt == 4)
-      {
-        if (twohundredcnt != 3 || !sp2seen)
-        {
-          errno = EBADMSG;
-          perror("Bad message");
-          return 1;
-        }
-        break;
-      }
+      perror("Proxy connection failed");
+      return 1;
     }
   }
 

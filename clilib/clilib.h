@@ -22,4 +22,10 @@ int socket_ex(char *name, uint16_t port);
 
 int connect_ex(int sockfd, char *name, uint16_t port);
 
+int write_http_connect_port(int fd, const char *host, uint16_t port);
+
+int write_http_connect(int fd, const char *host_and_port);
+
+int read_http_ok(int fd);
+
 #endif
