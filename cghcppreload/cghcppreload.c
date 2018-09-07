@@ -7,7 +7,7 @@
 #include "clilib.h"
 #include "dnshdr.h"
 
-#define MAX_RESOLVS (64*1024)
+#define MAX_RESOLVS (8*1024)
 
 size_t cur_resolv = 0;
 struct dst resolvs[MAX_RESOLVS];
