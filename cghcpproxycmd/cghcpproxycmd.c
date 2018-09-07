@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <fcntl.h>
+#include "clilib.h"
 
 /*
  * Usage: specify in .ssh/config:
@@ -18,6 +19,12 @@
  * Host ssh.example.com
  *   HostName ssh.example.com
  *   ProxyCommand /directory/to/cghcpproxycmd 10.150.2.100 8080 %h %p
+ *
+ * Or if DNS is properly configured, specify:
+ *
+ * Host ssh.example.com
+ *   HostName ssh.example.com
+ *   ProxyCommand /directory/to/cghcpproxycmd %h %p
  */
 
 // RFE move these into a common library
@@ -118,12 +125,12 @@ static ssize_t writev_all(int sockfd, struct iovec *iovs, size_t sz)
   }
 }
 
-const char conbegin[] = "CONNECT ";
-const char colon[] = ":";
-const char interim[] = " HTTP/1.1\r\nHost: ";
-const char crlfcrlf[] = "\r\n\r\n";
-const char httpslash[] = "HTTP/";
-const char twohundred[] = "200";
+static const char pr_conbegin[] = "CONNECT ";
+static const char pr_colon[] = ":";
+static const char pr_interim[] = " HTTP/1.1\r\nHost: ";
+static const char pr_crlfcrlf[] = "\r\n\r\n";
+static const char pr_httpslash[] = "HTTP/";
+static const char pr_twohundred[] = "200";
 
 int main(int argc, char **argv)
 {
@@ -135,15 +142,15 @@ int main(int argc, char **argv)
   ssize_t bytes_expected;
   ssize_t bytes_written;
   struct iovec iovs_src[] = {
-    {.iov_base = (char*)conbegin, .iov_len = sizeof(conbegin)-1},
+    {.iov_base = (char*)pr_conbegin, .iov_len = sizeof(pr_conbegin)-1},
     {.iov_base = NULL, .iov_len = 0}, // [1]
-    {.iov_base = (char*)colon, .iov_len = sizeof(colon)-1},
+    {.iov_base = (char*)pr_colon, .iov_len = sizeof(pr_colon)-1},
     {.iov_base = portint, .iov_len = 0}, // [3]
-    {.iov_base = (char*)interim, .iov_len = sizeof(interim)-1},
+    {.iov_base = (char*)pr_interim, .iov_len = sizeof(pr_interim)-1},
     {.iov_base = NULL, .iov_len = 0}, // [5]
-    {.iov_base = (char*)colon, .iov_len = sizeof(colon)-1},
+    {.iov_base = (char*)pr_colon, .iov_len = sizeof(pr_colon)-1},
     {.iov_base = portint, .iov_len = 0}, // [7]
-    {.iov_base = (char*)crlfcrlf, .iov_len = sizeof(crlfcrlf)-1},
+    {.iov_base = (char*)pr_crlfcrlf, .iov_len = sizeof(pr_crlfcrlf)-1},
   };
   size_t httpslashcnt = 0;
   size_t majcnt = 0;
@@ -159,161 +166,183 @@ int main(int argc, char **argv)
   size_t outbufcnt = 0;
   size_t inbufcnt = 0;
 
-  if (argc != 5)
+  if (argc != 3 && argc != 5)
   {
     printf("Usage: %s foo1.lan 8080 foo2.lan 80\n", argv[0]);
+    printf("Or:    %s foo2.lan 80\n", argv[0]);
     return 1;
   }
-  port = atoi(argv[2]);
-  if (((int)(uint16_t)port) != port)
+  if (argc == 3)
   {
-    printf("Usage: %s foo1.lan 8080 foo2.lan 80\n", argv[0]);
-    return 1;
-  }
-  he = gethostbyname(argv[1]);
-  if (he == NULL)
-  {
-    perror("Host not found");
-    return 1;
-  }
-  sin.sin_family = AF_INET;
-  sin.sin_port = htons(port);
-  memcpy(&sin.sin_addr, he->h_addr_list[0], he->h_length);
-
-  port = atoi(argv[4]);
-  if (((int)(uint16_t)port) != port)
-  {
-    printf("Usage: %s foo1.lan 8080 foo2.lan 80\n", argv[0]);
-    return 1;
-  }
-
-  sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (sockfd < 0)
-  {
-    perror("Err");
-    return 1;
-  }
-  if (connect(sockfd, (struct sockaddr*)&sin, sizeof(sin)) < 0)
-  {
-    perror("Err");
-    return 1;
-  }
-  printf("Connection successful\n");
-  snprintf(portint, sizeof(portint), "%d", port);
-  iovs_src[1].iov_base = argv[3];
-  iovs_src[1].iov_len = strlen(argv[3]);
-  iovs_src[3].iov_len = strlen(portint);
-  iovs_src[5].iov_base = argv[3];
-  iovs_src[5].iov_len = strlen(argv[3]);
-  iovs_src[7].iov_len = strlen(portint);
-  bytes_expected = bytes_iovs(iovs_src, 9);
-  bytes_written = writev_all(sockfd, iovs_src, 9);
-  if (bytes_written != bytes_expected)
-  {
-    perror("Err");
-    return 1;
-  }
-
-  // RFE move this into a common function
-  for (;;)
-  {
-    char ch;
-    struct pollfd pfd;
-    read_ret = read(sockfd, &ch, 1);
-    if (read_ret < 0 && (errno == EWOULDBLOCK || errno == EAGAIN))
+    port = atoi(argv[2]);
+    if (((int)(uint16_t)port) != port)
     {
-      pfd.fd = sockfd;
-      pfd.events = POLLIN;
-      poll(&pfd, 1, -1);
-      continue;
-    }
-    if (read_ret < 0)
-    {
-      perror("Read returned -1");
+      printf("Usage: %s foo1.lan 8080 foo2.lan 80\n", argv[0]);
+      printf("Or:    %s foo2.lan 80\n", argv[0]);
       return 1;
     }
-    if (read_ret == 0)
+    sockfd = socket_ex(argv[1], port);
+    if (sockfd < 0)
     {
-      errno = EBADMSG;
-      perror("Read returned 0");
+      perror("Err");
       return 1;
     }
-    if (read_ret > 1)
+  }
+  else
+  {
+    port = atoi(argv[2]);
+    if (((int)(uint16_t)port) != port)
     {
-      abort();
+      printf("Usage: %s foo1.lan 8080 foo2.lan 80\n", argv[0]);
+      printf("Or:    %s foo2.lan 80\n", argv[0]);
+      return 1;
     }
-    if (httpslashcnt < 5)
+    he = gethostbyname(argv[1]);
+    if (he == NULL)
     {
-      if (httpslash[httpslashcnt] == ch)
-      {
-        httpslashcnt++;
-      }
-      else
-      {
-        errno = EBADMSG;
-        perror("Bad message");
-        return 1;
-      }
+      perror("Host not found");
+      return 1;
     }
-    else if (!spseen)
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(port);
+    memcpy(&sin.sin_addr, he->h_addr_list[0], he->h_length);
+
+    port = atoi(argv[4]);
+    if (((int)(uint16_t)port) != port)
     {
-      if (isdigit(ch))
+      printf("Usage: %s foo1.lan 8080 foo2.lan 80\n", argv[0]);
+      printf("Or:    %s foo2.lan 80\n", argv[0]);
+      return 1;
+    }
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0)
+    {
+      perror("Err");
+      return 1;
+    }
+    if (connect(sockfd, (struct sockaddr*)&sin, sizeof(sin)) < 0)
+    {
+      perror("Err");
+      return 1;
+    }
+    printf("Connection successful\n");
+    snprintf(portint, sizeof(portint), "%d", port);
+    iovs_src[1].iov_base = argv[3];
+    iovs_src[1].iov_len = strlen(argv[3]);
+    iovs_src[3].iov_len = strlen(portint);
+    iovs_src[5].iov_base = argv[3];
+    iovs_src[5].iov_len = strlen(argv[3]);
+    iovs_src[7].iov_len = strlen(portint);
+    bytes_expected = bytes_iovs(iovs_src, 9);
+    bytes_written = writev_all(sockfd, iovs_src, 9);
+    if (bytes_written != bytes_expected)
+    {
+      perror("Err");
+      return 1;
+    }
+
+    // RFE move this into a common function
+    for (;;)
+    {
+      char ch;
+      struct pollfd pfd;
+      read_ret = read(sockfd, &ch, 1);
+      if (read_ret < 0 && (errno == EWOULDBLOCK || errno == EAGAIN))
       {
-        if (dot_seen)
-        {
-          mincnt++;
-        }
-        else
-        {
-          majcnt++;
-        }
+        pfd.fd = sockfd;
+        pfd.events = POLLIN;
+        poll(&pfd, 1, -1);
         continue;
       }
-      if (ch == '.' && !dot_seen)
+      if (read_ret < 0)
       {
-        dot_seen = 1;
+        perror("Read returned -1");
+        return 1;
       }
-      if (ch == ' ')
+      if (read_ret == 0)
       {
-        if (majcnt == 0 || mincnt == 0)
+        errno = EBADMSG;
+        perror("Read returned 0");
+        return 1;
+      }
+      if (read_ret > 1)
+      {
+        abort();
+      }
+      if (httpslashcnt < 5)
+      {
+        if (pr_httpslash[httpslashcnt] == ch)
+        {
+          httpslashcnt++;
+        }
+        else
         {
           errno = EBADMSG;
           perror("Bad message");
           return 1;
         }
-        spseen = 1;
       }
-    }
-    else if (!sp2seen)
-    {
-      if (twohundredcnt < 3 && twohundred[twohundredcnt] == ch)
+      else if (!spseen)
       {
-        twohundredcnt++;
+        if (isdigit(ch))
+        {
+          if (dot_seen)
+          {
+            mincnt++;
+          }
+          else
+          {
+            majcnt++;
+          }
+          continue;
+        }
+        if (ch == '.' && !dot_seen)
+        {
+          dot_seen = 1;
+        }
+        if (ch == ' ')
+        {
+          if (majcnt == 0 || mincnt == 0)
+          {
+            errno = EBADMSG;
+            perror("Bad message");
+            return 1;
+          }
+          spseen = 1;
+        }
       }
-      else if (ch == ' ')
+      else if (!sp2seen)
       {
-        sp2seen = 1;
+        if (twohundredcnt < 3 && pr_twohundred[twohundredcnt] == ch)
+        {
+          twohundredcnt++;
+        }
+        else if (ch == ' ')
+        {
+          sp2seen = 1;
+        }
+        else
+        {
+          errno = EBADMSG;
+          perror("Bad message");
+          return 1;
+        }
       }
-      else
+      if (pr_crlfcrlf[crlfcrlfcnt] == ch)
       {
-        errno = EBADMSG;
-        perror("Bad message");
-        return 1;
+        crlfcrlfcnt++;
       }
-    }
-    if (crlfcrlf[crlfcrlfcnt] == ch)
-    {
-      crlfcrlfcnt++;
-    }
-    if (crlfcrlfcnt == 4)
-    {
-      if (twohundredcnt != 3 || !sp2seen)
+      if (crlfcrlfcnt == 4)
       {
-        errno = EBADMSG;
-        perror("Bad message");
-        return 1;
+        if (twohundredcnt != 3 || !sp2seen)
+        {
+          errno = EBADMSG;
+          perror("Bad message");
+          return 1;
+        }
+        break;
       }
-      break;
     }
   }
 
