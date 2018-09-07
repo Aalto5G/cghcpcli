@@ -630,6 +630,55 @@ static ssize_t writev_all(int sockfd, struct iovec *iovs, size_t sz)
   }
 }
 
+static ssize_t read_all(int sockfd, char *buf, size_t sz)
+{
+  size_t bytes_read = 0;
+  ssize_t ret;
+  struct pollfd pfd;
+  if (sz == 0)
+  {
+    return 0;
+  }
+  for (;;)
+  {
+    ret = read(sockfd, buf + bytes_read, sz - bytes_read);
+    if (ret > 0)
+    {
+      bytes_read += ret;
+      if (bytes_read >= sz)
+      {
+        return bytes_read;
+      }
+    }
+    else if (ret <= 0)
+    {
+      if (ret == 0)
+      {
+        return bytes_read;
+      }
+      if (ret < 0 && errno == EINTR)
+      {
+        continue;
+      }
+      else if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+      {
+        pfd.fd = sockfd;
+        pfd.events = POLLIN;
+        poll(&pfd, 1, -1);
+        continue;
+      }
+      else if (bytes_read > 0)
+      {
+        return bytes_read;
+      }
+      else
+      {
+        return -1;
+      }
+    }
+  }
+}
+
 const char conbegin[] = "CONNECT ";
 const char colon[] = ":";
 const char interim[] = " HTTP/1.1\r\nHost: ";
@@ -701,12 +750,26 @@ int read_http_ok(int fd)
   size_t mincnt = 0;
   size_t crlfcrlfcnt = 0;
   size_t twohundredcnt = 0;
-  ssize_t read_ret;
+  char buf[1024] = {};
+  ssize_t cnt = 0;
+  ssize_t read_ret = 0;
   for (;;)
   {
     char ch;
     struct pollfd pfd;
-    read_ret = read(fd, &ch, 1);
+    if (read_ret <= 0 || cnt >= read_ret)
+    {
+      errno = EBADMSG;
+      if (read_ret > 0)
+      {
+        if (read_all(fd, buf, read_ret) != read_ret)
+        {
+          return -1;
+        }
+      }
+      cnt = 0;
+      read_ret = recv(fd, buf, sizeof(buf), MSG_PEEK);
+    }
     if (read_ret < 0 && (errno == EWOULDBLOCK || errno == EAGAIN))
     {
       pfd.fd = fd;
@@ -723,10 +786,7 @@ int read_http_ok(int fd)
       errno = EBADMSG;
       return -1;
     }
-    if (read_ret > 1)
-    {
-      abort();
-    }
+    ch = buf[cnt++];
     if (httpslashcnt < 5)
     {
       if (httpslash[httpslashcnt] == ch)
@@ -796,6 +856,10 @@ int read_http_ok(int fd)
       }
       break;
     }
+  }
+  if (read_all(fd, buf, cnt) != cnt)
+  {
+    return -1;
   }
   return 0;
 }
