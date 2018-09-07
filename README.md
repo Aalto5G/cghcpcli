@@ -96,6 +96,14 @@ Host ssh.example.com
         ProxyCommand    /path/to/cghcpcli/cghcpproxycmd/cghcpproxycmd 10.150.2.100 8080 %h %p
 ```
 
+Or if DNS is properly configured:
+
+```
+Host ssh.example.com
+        HostName        ssh.example.com
+        ProxyCommand    /path/to/cghcpcli/cghcpproxycmd/cghcpproxycmd %h %p
+```
+
 Then execute:
 ```
 mkdir -p /etc/netns/ns1
