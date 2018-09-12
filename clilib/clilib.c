@@ -13,21 +13,21 @@
 #include "dnshdr.h"
 #include "clilib.h"
 
-int global_inited = 0;
+static int global_inited = 0;
 
 #define NAMESERVERS_MAXCOUNT 3
-size_t nameservers_count = 0;
-uint32_t nameservers[NAMESERVERS_MAXCOUNT];
+static size_t nameservers_count = 0;
+static uint32_t nameservers[NAMESERVERS_MAXCOUNT];
 
-pthread_mutex_t global_mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t global_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 struct searchentry {
   char domain[256];
 };
 
 #define SEARCHENTRIES_MAXCOUNT 6
-size_t searchentries_count = 0;
-struct searchentry searchentries[SEARCHENTRIES_MAXCOUNT];
+static size_t searchentries_count = 0;
+static struct searchentry searchentries[SEARCHENTRIES_MAXCOUNT];
 
 static void global_addr_set(void)
 {
@@ -679,12 +679,12 @@ static ssize_t read_all(int sockfd, char *buf, size_t sz)
   }
 }
 
-const char conbegin[] = "CONNECT ";
-const char colon[] = ":";
-const char interim[] = " HTTP/1.1\r\nHost: ";
-const char crlfcrlf[] = "\r\n\r\n";
-const char httpslash[] = "HTTP/";
-const char twohundred[] = "200";
+static const char conbegin[] = "CONNECT ";
+static const char colon[] = ":";
+static const char interim[] = " HTTP/1.1\r\nHost: ";
+static const char crlfcrlf[] = "\r\n\r\n";
+static const char httpslash[] = "HTTP/";
+static const char twohundred[] = "200";
 
 int write_http_connect_port(int fd, const char *host, uint16_t port)
 {
