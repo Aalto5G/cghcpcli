@@ -10,8 +10,8 @@
 
 #define MAX_RESOLVS (8*1024)
 
-size_t cur_resolv = 0;
-struct dst resolvs[MAX_RESOLVS];
+static size_t cur_resolv = 0;
+static struct dst resolvs[MAX_RESOLVS];
 
 int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 {
