@@ -3,6 +3,22 @@ CC := cc
 
 .SUFFIXES:
 
+DIRHASHLIST := pptk/hashlist
+LCHASHLIST := pptk/hashlist
+MODULES += HASHLIST
+
+DIRLOG := pptk/log
+LCLOG := pptk/log
+MODULES += LOG
+
+DIRMISC := pptk/misc
+LCMISC := pptk/misc
+MODULES += MISC
+
+DIRIPHDR := pptk/iphdr
+LCIPHDR := pptk/iphdr
+MODULES += IPHDR
+
 DIRCLILIB := clilib
 LCCLILIB := clilib
 MODULES += CLILIB

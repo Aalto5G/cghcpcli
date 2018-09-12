@@ -2,10 +2,11 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <netdb.h>
 #include <dlfcn.h>
 #include "clilib.h"
-#include "dnshdr.h"
+#include "hdr.h"
 
 #define MAX_RESOLVS (8*1024)
 
