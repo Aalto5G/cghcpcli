@@ -10,8 +10,8 @@ CLILIB_OBJ := $(patsubst %.c,%.o,$(CLILIB_SRC))
 CLILIB_DEP_LIB := $(patsubst %.c,%.d,$(CLILIB_SRC_LIB))
 CLILIB_DEP := $(patsubst %.c,%.d,$(CLILIB_SRC))
 
-CFLAGS_CLILIB := 
-LIBS_CLILIB := 
+CFLAGS_CLILIB := -I$(DIRIPHDR) -I$(DIRMISC)
+LIBS_CLILIB := $(DIRIPHDR)/libiphdr.a
 
 MAKEFILES_CLILIB := $(DIRCLILIB)/module.mk
 
