@@ -1,5 +1,7 @@
 # CG-HCPCLI
 
+![CG-HCPCLI](cghcpclilogo.png)
+
 Carrier grade HTTP CONNECT proxy client (CG-HCPCLI) is a client library for a
 NAT traversal solution called carrier grade HTTP CONNECT proxy (CG-HCP), which
 is one type of carrier grade TCP proxy (CG-TP). For an implementation of
