@@ -87,7 +87,11 @@ int main(int argc, char **argv)
     }
     sin.sin_family = AF_INET;
     sin.sin_port = htons(port);
-    memcpy(&sin.sin_addr, he->h_addr_list[0], he->h_length);
+    if (he->h_length < 0)
+    {
+      abort();
+    }
+    memcpy(&sin.sin_addr, he->h_addr_list[0], (size_t)he->h_length);
 
     port = atoi(argv[4]);
     if (((int)(uint16_t)port) != port)
@@ -159,7 +163,10 @@ int main(int argc, char **argv)
       {
         exit(0);
       }
-      outbufcnt += ret;
+      if (ret > 0)
+      {
+        outbufcnt += (size_t)ret;
+      }
     }
     if (FD_ISSET(sockfd, &readfds))
     {
@@ -173,7 +180,10 @@ int main(int argc, char **argv)
       {
         exit(0);
       }
-      inbufcnt += ret;
+      if (ret > 0)
+      {
+        inbufcnt += (size_t)ret;
+      }
     }
     if (FD_ISSET(1, &writefds))
     {
@@ -183,8 +193,11 @@ int main(int argc, char **argv)
         perror("Err");
         exit(1);
       }
-      memmove(inbuf, inbuf+ret, inbufcnt-ret);
-      inbufcnt -= ret;
+      if (ret > 0)
+      {
+        memmove(inbuf, inbuf+ret, inbufcnt-(size_t)ret);
+        inbufcnt -= (size_t)ret;
+      }
     }
     if (FD_ISSET(sockfd, &writefds))
     {
@@ -194,8 +207,11 @@ int main(int argc, char **argv)
         perror("Err");
         exit(1);
       }
-      memmove(outbuf, outbuf+ret, outbufcnt-ret);
-      outbufcnt -= ret;
+      if (ret > 0)
+      {
+        memmove(outbuf, outbuf+ret, outbufcnt-(size_t)ret);
+        outbufcnt -= (size_t)ret;
+      }
     }
   }
 
