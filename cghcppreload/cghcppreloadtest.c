@@ -30,7 +30,11 @@ int main(int argc, char **argv)
   }
   sin.sin_family = AF_INET;
   sin.sin_port = htons(port);
-  memcpy(&sin.sin_addr, he->h_addr_list[0], he->h_length);
+  if (he->h_length < 0)
+  {
+    abort();
+  }
+  memcpy(&sin.sin_addr, he->h_addr_list[0], (size_t)he->h_length);
   sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0)
   {

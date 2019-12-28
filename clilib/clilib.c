@@ -240,7 +240,7 @@ static int resolv_patha(struct dst *dst)
       uint16_t qtype;
       char databuf[8192];
       size_t datalen;
-      if (recursive_resolve(answer, recvd, pathfirst, 1, &qtype,
+      if (recursive_resolve(answer, (size_t)recvd, pathfirst, 1, &qtype,
                             databuf, sizeof(databuf), &datalen) == 0)
       {
         if (datalen == 4 && qtype == 1)
@@ -420,7 +420,7 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
   
     if (dns_id(answer) == txidtxt && !answer_txt)
     {
-      if (recursive_resolve(answer, recvd, namcgtp, 1, &qtype,
+      if (recursive_resolve(answer, (size_t)recvd, namcgtp, 1, &qtype,
                             databuf, sizeof(databuf)-1, &datalen) == 0)
       {
         if (qtype == 16)
@@ -496,7 +496,7 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
   
     if (dns_id(answer) == txida && !answer_a)
     {
-      if (recursive_resolve(answer, recvd, name, 1, &qtype,
+      if (recursive_resolve(answer, (size_t)recvd, name, 1, &qtype,
                             databuf, sizeof(databuf), &datalen) == 0)
       {
         if (datalen == 4 && qtype == 1)
@@ -516,7 +516,7 @@ int get_dst(struct dst *dst, int try_ipv6, char *name)
     }
     if (dns_id(answer) == txidaaaa && !answer_aaaa)
     {
-      if (recursive_resolve(answer, recvd, name, 1, &qtype,
+      if (recursive_resolve(answer, (size_t)recvd, name, 1, &qtype,
                             databuf, sizeof(databuf), &datalen) == 0)
       {
         if (datalen == 16 && qtype == 28)
@@ -594,11 +594,11 @@ static ssize_t writev_all(int sockfd, struct iovec *iovs, size_t sz)
     ret = writev(sockfd, iovs + reduceret, sz - reduceret);
     if (ret > 0)
     {
-      bytes_written += ret;
-      reduceret = reduce_iovs(iovs, sz, ret);
+      bytes_written += (size_t)ret;
+      reduceret = reduce_iovs(iovs, sz, (size_t)ret);
       if (reduceret == sz)
       {
-        return bytes_written;
+        return (ssize_t)bytes_written;
       }
     }
     else if (ret <= 0)
@@ -620,7 +620,7 @@ static ssize_t writev_all(int sockfd, struct iovec *iovs, size_t sz)
       }
       else if (bytes_written > 0)
       {
-        return bytes_written;
+        return (ssize_t)bytes_written;
       }
       else
       {
@@ -644,17 +644,17 @@ static ssize_t read_all(int sockfd, char *buf, size_t sz)
     ret = read(sockfd, buf + bytes_read, sz - bytes_read);
     if (ret > 0)
     {
-      bytes_read += ret;
+      bytes_read += (size_t)ret;
       if (bytes_read >= sz)
       {
-        return bytes_read;
+        return (ssize_t)bytes_read;
       }
     }
     else if (ret <= 0)
     {
       if (ret == 0)
       {
-        return bytes_read;
+        return (ssize_t)bytes_read;
       }
       if (ret < 0 && errno == EINTR)
       {
@@ -669,7 +669,7 @@ static ssize_t read_all(int sockfd, char *buf, size_t sz)
       }
       else if (bytes_read > 0)
       {
-        return bytes_read;
+        return (ssize_t)bytes_read;
       }
       else
       {
@@ -708,7 +708,7 @@ int write_http_connect_port(int fd, const char *host, uint16_t port)
   iovs[5].iov_base = (char*)host;
   iovs[5].iov_len = strlen(host);
   iovs[7].iov_len = strlen(portint);
-  bytes_expected = bytes_iovs(iovs, 9);
+  bytes_expected = (ssize_t)bytes_iovs(iovs, 9);
   bytes_written = writev_all(fd, iovs, 9);
   if (bytes_written != bytes_expected)
   {
@@ -731,7 +731,7 @@ int write_http_connect(int fd, const char *host_and_port)
   iovs[1].iov_len = strlen(host_and_port);
   iovs[3].iov_base = (char*)host_and_port;
   iovs[3].iov_len = strlen(host_and_port);
-  bytes_expected = bytes_iovs(iovs, 5);
+  bytes_expected = (ssize_t)bytes_iovs(iovs, 5);
   bytes_written = writev_all(fd, iovs, 5);
   if (bytes_written != bytes_expected)
   {
@@ -762,7 +762,7 @@ int read_http_ok(int fd)
       errno = EBADMSG;
       if (read_ret > 0)
       {
-        if (read_all(fd, buf, read_ret) != read_ret)
+        if (read_all(fd, buf, (size_t)read_ret) != read_ret)
         {
           return -1;
         }
@@ -857,7 +857,7 @@ int read_http_ok(int fd)
       break;
     }
   }
-  if (read_all(fd, buf, cnt) != cnt)
+  if (read_all(fd, buf, (size_t)cnt) != cnt)
   {
     return -1;
   }

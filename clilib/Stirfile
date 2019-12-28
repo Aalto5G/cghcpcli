@@ -1,0 +1,19 @@
+@subfile
+@strict
+
+# You can modify these
+$SRC_LIB = ["clilib.c"]
+$SRC_PROG = ["clilibtest.c"]
+$LIB = "libclilib.a"
+# FIXME fix += operator
+$EXTRACFLAGS = ["-I../pptk/iphdr", "-I../pptk/misc"]
+$CFLAGS = [@$CFLAGS, @$EXTRACFLAGS]
+$LIBS = ["../pptk/iphdr/libiphdr.a"]
+$UNITDEPS = []
+$UNITCMDS = []
+
+# You won't want to modify anything below this line
+@call $MODULE($LIB, $SRC_LIB, $SRC_PROG, $LIBS, $UNITDEPS, $UNITCMDS)
+
+@cdepincludes @autophony @autotarget @ignore \
+  @sufsuball([@$SRC_PROG, @$SRC_LIB], ".c", ".d")

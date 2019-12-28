@@ -1,0 +1,24 @@
+@subfile
+@strict
+
+# You can modify these
+$SRC_LIB = ["cghcppreload.c"]
+$SRC_PROG = ["cghcppreloadtest.c"]
+$LIB = "libcghcppreload.a"
+# FIXME fix += operator
+$EXTRACFLAGS = ["-I../clilib", "-I../pptk/misc"]
+$CFLAGS = [@$CFLAGS, @$EXTRACFLAGS]
+$LIBS = ["../clilib/libclilib.a", "../pptk/iphdr/libiphdr.a"]
+$UNITDEPS = []
+$UNITCMDS = []
+
+# You won't want to modify anything below this line
+@call $MODULE($LIB, $SRC_LIB, $SRC_PROG, $LIBS, $UNITDEPS, $UNITCMDS)
+
+@cdepincludes @autophony @autotarget @ignore \
+  @sufsuball([@$SRC_PROG, @$SRC_LIB], ".c", ".d")
+
+@deponly: 'all': 'libcghcppreload.so'
+
+'libcghcppreload.so': 'libcghcppreload.a' $LIBS
+@	[$(CC), "-shared", "-fPIC", "-o", $@, "-Wl,--whole-archive", @@suffilter($^, ".a"), "-Wl,--no-whole-archive", "-ldl", "-lc"]
